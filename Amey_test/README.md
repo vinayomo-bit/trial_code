@@ -242,3 +242,127 @@ This code can be used for:
 - **Object tracking** - monitoring relative movement of connected objects
 - **Assembly verification** - ensuring correct positioning of components
 - **Quality control** - measuring manufacturing tolerances
+
+## ArUco Bot Navigation
+
+This project now includes a complete robotic navigation system where a robot with an attached ArUco marker can autonomously move toward a target ArUco marker.
+
+### Hardware Components
+
+- **ESP32 WROOM** development board
+- **L293D motor driver** IC  
+- **2 DC motors** for differential drive
+- **ArUco markers** (printed)
+- **Power supply** for motors
+- **Camera** for marker detection
+
+### Files Description
+
+#### `aruco_bot_controller.ino`
+Arduino code for ESP32 that controls the robot motors via L293D driver and communicates with Python via TCP.
+
+#### `aruco_bot_navigation.py`
+Python script that detects markers and sends navigation commands to the robot via WiFi.
+
+#### `test_esp32_communication.py`
+Test script to verify TCP communication between Python and ESP32 without needing markers.
+
+#### `BOT_SETUP_GUIDE.md`
+Comprehensive hardware setup and wiring guide for the robot system.
+
+### Usage
+
+#### 5. Robot Navigation Setup
+
+**Hardware Setup:**
+1. Wire ESP32 to L293D motor driver according to the wiring diagram in `BOT_SETUP_GUIDE.md`
+2. Update WiFi credentials in `aruco_bot_controller.ino`
+3. Upload Arduino code to ESP32
+4. Attach ArUco marker (ID 0) to robot
+5. Print target marker (ID 2)
+
+**Software Usage:**
+```bash
+# Test ESP32 communication first
+python test_esp32_communication.py
+
+# Run the navigation system
+python aruco_bot_navigation.py
+```
+
+**Navigation Controls:**
+- **SPACEBAR**: Start/stop autonomous navigation
+- **E**: Emergency stop
+- **S**: Save current frame
+- **R**: Reconnect to ESP32
+- **Q**: Quit application
+
+#### 6. System Operation
+
+1. **Setup Phase:**
+   - Place robot with marker ID 0 in camera view
+   - Place target marker ID 2 somewhere in the environment
+   - Ensure both markers are visible to camera
+
+2. **Navigation Phase:**
+   - Robot automatically calculates direction to target
+   - Moves forward when target is ahead
+   - Turns left/right to align with target
+   - Stops when within threshold distance
+
+3. **Monitoring:**
+   - Real-time visualization shows marker detection
+   - Console displays navigation commands and status
+   - Visual overlay shows connection and detection status
+
+### Navigation Algorithm
+
+The robot navigation uses the two-marker analysis to:
+
+1. **Detect both markers** (bot and target) in camera feed
+2. **Calculate relative position** using distance and azimuth angle
+3. **Determine movement command:**
+   - Forward: Target is ahead (azimuth < 15°)
+   - Turn Left: Target is to the left (azimuth < -15°)
+   - Turn Right: Target is to the right (azimuth > 15°)
+   - Stop: Target reached (distance < 10cm)
+
+4. **Send TCP commands** to ESP32 controller
+5. **Execute movement** with differential drive motors
+
+### Technical Specifications
+
+#### Communication
+- **Protocol**: TCP socket over WiFi
+- **Port**: 8888 (configurable)
+- **Commands**: forward, backward, left, right, stop
+- **Update Rate**: 2 Hz (configurable)
+
+#### Navigation Parameters
+- **Distance Threshold**: 10cm (stop when reached)
+- **Angle Threshold**: 15° (turn if target outside this range)
+- **Max Detection Distance**: 2m (ignore distant detections)
+- **Command Interval**: 0.5 seconds between movements
+
+#### Motor Control
+- **PWM Speed Control**: 0-255 range
+- **Default Speed**: 200 (forward/backward)
+- **Turn Speed**: 150 (differential turning)
+- **Movement Duration**: 500ms forward, 300ms turns
+
+### Applications
+
+#### Educational Projects
+- Learn robotics and computer vision integration
+- Understand coordinate transformations and navigation
+- Practice Arduino and Python communication
+
+#### Research and Development
+- Autonomous navigation testbed
+- Multi-robot coordination experiments
+- Indoor positioning system development
+
+#### Practical Applications
+- Warehouse automation proof-of-concept
+- Service robot navigation
+- Interactive art installations
