@@ -102,4 +102,3 @@ if __name__ == "__main__":
     
     print("\nMarker generation complete!")
     print("Print the markers on paper and use them with the detector.")
-...existing code...
