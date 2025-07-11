@@ -10,6 +10,11 @@ This project provides a comprehensive solution for detecting ArUco markers and d
 - **Visual feedback** with coordinate axes and text overlays
 - **Image and video processing** capabilities
 - **Marker generation** tools for testing
+- **Distance calculation** between any two detected markers
+- **Relative orientation analysis** (roll, pitch, yaw differences)
+- **Direction vector computation** with azimuth and elevation angles
+- **Real-time visualization** of marker relationships
+- **Comprehensive analysis reports** with detailed metrics
 
 ## Files Description
 
@@ -21,6 +26,12 @@ Script to generate ArUco markers and marker boards for testing.
 
 ### `process_media.py`
 Command-line tool for processing images and videos.
+
+### `two_marker_analysis.py`
+Dedicated script for real-time two-marker relationship analysis with visual feedback.
+
+### `test_two_marker_algorithm.py`
+Test script demonstrating the mathematical algorithms with example data and verification.
 
 ## Installation
 
@@ -76,6 +87,38 @@ Auto-detect file type:
 python process_media.py input_file.jpg
 ```
 
+### 4. Two-Marker Analysis
+
+Run the dedicated two-marker analysis tool:
+
+```bash
+python two_marker_analysis.py
+```
+
+This will:
+- Prompt you to select which two markers to track
+- Show real-time distance and orientation relationships
+- Provide visual indicators connecting the markers
+- Display comprehensive analysis data
+
+**Controls:**
+- Press 'q' to quit
+- Press 's' to save current analysis and screenshot
+- Press 'h' to show analysis history and statistics
+- Press 'r' to reset analysis history
+- Press '1-9' to change the first marker ID
+- Press 'SHIFT + 1-9' to change the second marker ID
+
+#### 5. Test the Algorithm
+
+Test the mathematical algorithms with sample data:
+
+```bash
+python test_two_marker_algorithm.py
+```
+
+This will run verification tests and demonstrate the mathematical concepts.
+
 ## Understanding the Output
 
 For each detected marker, the system provides:
@@ -97,6 +140,27 @@ For each detected marker, the system provides:
   - Green line: Y-axis
   - Blue line: Z-axis
 - **Text overlay**: Marker ID, orientation angles, and position
+
+### Two-Marker Analysis Output
+
+When analyzing two markers, you'll see output like:
+```
+Markers: 0 <-> 1
+Distance: 0.2847 meters
+Azimuth: 45.3°
+Elevation: -12.7°
+
+Relative Orientation:
+  Roll: 15.2°
+  Pitch: -8.9°
+  Yaw: 23.4°
+```
+
+This indicates:
+- Markers 0 and 1 are 28.47cm apart
+- Marker 1 is 45.3° clockwise from marker 0 in the XY plane
+- Marker 1 is 12.7° below marker 0
+- The relative rotation between markers shows how much marker 1 is rotated compared to marker 0
 
 ## Camera Calibration
 
@@ -174,3 +238,7 @@ This code can be used for:
 - **Object tracking** and manipulation
 - **3D reconstruction** projects
 - **Educational** computer vision projects
+- **Robotic calibration** - measuring precise distances between reference points
+- **Object tracking** - monitoring relative movement of connected objects
+- **Assembly verification** - ensuring correct positioning of components
+- **Quality control** - measuring manufacturing tolerances
