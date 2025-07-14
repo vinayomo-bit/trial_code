@@ -6,7 +6,11 @@ The bot (marker ID 0) will navigate toward the target (marker ID 2) using TCP co
 with an ESP32 controller.
 
 Features:
-- Real-time ArUco detection
+- Real-time ArUco             # Calculate navigation command
+            if self.use_improved_nav:
+                command = self.calculate_navigation_command_v2(analysis)
+            else:
+                command = self.calculate_navigation_command(analysis)tection
 - TCP communication with ESP32
 - Configurable movement parameters
 - Visual feedback and logging
@@ -55,6 +59,8 @@ class ArucoBot:
         self.target_position = None
         self.navigation_active = False
         self.emergency_stop = False
+        self.debug_mode = False  # Add debug mode flag
+        self.use_improved_nav = True  # Use improved navigation by default
         
         # Logging
         self.movement_log = []
@@ -164,7 +170,7 @@ class ArucoBot:
         
         distance = bot_analysis['distance']
         direction_info = bot_analysis['direction_from_1_to_2']
-        azimuth = direction_info['azimuth_angle']
+        raw_azimuth = direction_info['azimuth_angle']
         
         # Check if we've reached the target
         if distance < self.distance_threshold:
@@ -174,21 +180,87 @@ class ArucoBot:
         if distance > self.max_distance:
             return "stop"
         
-        # Determine movement based on azimuth angle
-        # Azimuth: 0° = straight ahead, +90° = right, -90° = left
+        # Convert azimuth to navigation angle
+        # Raw azimuth: 0° = right, 90° = down, -90° = up, ±180° = left
+        # Navigation angle: 0° = forward, +90° = right, -90° = left, ±180° = backward
+        nav_angle = raw_azimuth - 90.0
         
-        if abs(azimuth) < self.angle_threshold:
+        # Normalize to [-180, 180] range
+        if nav_angle > 180:
+            nav_angle -= 360
+        elif nav_angle < -180:
+            nav_angle += 360
+        
+        # Determine movement based on navigation angle
+        # nav_angle: 0° = straight ahead, +90° = right, -90° = left
+        
+        if abs(nav_angle) < self.angle_threshold:
             # Target is roughly ahead - move forward
             return "forward"
-        elif azimuth > self.angle_threshold:
+        elif nav_angle > self.angle_threshold:
             # Target is to the right - turn right
             return "right"
-        elif azimuth < -self.angle_threshold:
+        elif nav_angle < -self.angle_threshold:
             # Target is to the left - turn left
             return "left"
         else:
             return "stop"
     
+    def calculate_navigation_command_v2(self, bot_analysis):
+        """
+        Improved navigation command calculation that considers bot's orientation
+        
+        Args:
+            bot_analysis: Analysis data from analyze_marker_pair
+            
+        Returns:
+            command: Movement command string
+        """
+        if not bot_analysis:
+            return "stop"
+        
+        distance = bot_analysis['distance']
+        
+        # Check if we've reached the target
+        if distance < self.distance_threshold:
+            return "stop"
+        
+        # Check if target is too far (might be detection error)
+        if distance > self.max_distance:
+            return "stop"
+        
+        # Get bot's orientation (yaw angle)
+        bot_yaw = bot_analysis['marker1_orientation']['yaw']
+        
+        # Get direction vector from bot to target
+        direction_vector = bot_analysis['direction_from_1_to_2']['direction_vector']
+        
+        # Calculate angle to target in world coordinates
+        target_angle = math.degrees(math.atan2(direction_vector[1], direction_vector[0]))
+        
+        # Calculate relative angle (target angle relative to bot's forward direction)
+        # Bot's forward direction is its yaw angle
+        relative_angle = target_angle - bot_yaw
+        
+        # Normalize to [-180, 180] range
+        while relative_angle > 180:
+            relative_angle -= 360
+        while relative_angle < -180:
+            relative_angle += 360
+        
+        # Determine movement based on relative angle
+        if abs(relative_angle) < self.angle_threshold:
+            # Target is roughly ahead - move forward
+            return "forward"
+        elif relative_angle > self.angle_threshold:
+            # Target is to the right - turn right
+            return "right"
+        elif relative_angle < -self.angle_threshold:
+            # Target is to the left - turn left
+            return "left"
+        else:
+            return "stop"
+
     def process_navigation(self, detection_data):
         """
         Process marker detection data and send navigation commands
@@ -210,13 +282,40 @@ class ArucoBot:
         )
         
         if analysis:
+            # Debug coordinate system if enabled
+            if self.debug_mode:
+                self.debug_coordinate_system(analysis)
+            
             # Calculate navigation command
-            command = self.calculate_navigation_command(analysis)
+            command = self.calculate_navigation_command_v2(analysis)
             
             # Send command to ESP32
             if self.send_command(command):
-                print(f"Navigation: {command} | Distance: {analysis['distance']:.3f}m | "
-                      f"Azimuth: {analysis['direction_from_1_to_2']['azimuth_angle']:.1f}°")
+                raw_azimuth = analysis['direction_from_1_to_2']['azimuth_angle']
+                bot_yaw = analysis['marker1_orientation']['yaw']
+                
+                if self.use_improved_nav:
+                    # Calculate relative angle for improved navigation
+                    direction_vector = analysis['direction_from_1_to_2']['direction_vector']
+                    target_angle = math.degrees(math.atan2(direction_vector[1], direction_vector[0]))
+                    relative_angle = target_angle - bot_yaw
+                    while relative_angle > 180:
+                        relative_angle -= 360
+                    while relative_angle < -180:
+                        relative_angle += 360
+                    
+                    print(f"Navigation: {command} | Distance: {analysis['distance']:.3f}m | "
+                          f"Bot Yaw: {bot_yaw:.1f}° | Relative: {relative_angle:.1f}° | Method: Improved")
+                else:
+                    # Original navigation method
+                    nav_angle = raw_azimuth - 90.0
+                    if nav_angle > 180:
+                        nav_angle -= 360
+                    elif nav_angle < -180:
+                        nav_angle += 360
+                        
+                    print(f"Navigation: {command} | Distance: {analysis['distance']:.3f}m | "
+                          f"Raw Azimuth: {raw_azimuth:.1f}° | Nav Angle: {nav_angle:.1f}° | Method: Original")
                 
                 self.last_command_time = current_time
                 
@@ -301,7 +400,7 @@ class ArucoBot:
         Main navigation loop
         """
         # Initialize camera
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(1)
         
         if not cap.isOpened():
             print("Error: Could not open camera")
@@ -313,6 +412,8 @@ class ArucoBot:
         print("\nControls:")
         print("- Press 'SPACE' to start/stop navigation")
         print("- Press 'e' for emergency stop")
+        print("- Press 'd' to toggle debug mode")
+        print("- Press 'n' to toggle navigation method")
         print("- Press 's' to save current frame")
         print("- Press 'r' to reconnect to ESP32")
         print("- Press 'q' to quit")
@@ -355,6 +456,13 @@ class ArucoBot:
                 self.navigation_active = False
                 self.send_command("stop")
                 print("EMERGENCY STOP activated")
+            elif key == ord('d'):
+                self.debug_mode = not self.debug_mode
+                print(f"Debug mode: {'ON' if self.debug_mode else 'OFF'}")
+            elif key == ord('n'):
+                self.use_improved_nav = not self.use_improved_nav
+                nav_method = "Improved (orientation-aware)" if self.use_improved_nav else "Original (position-only)"
+                print(f"Navigation method: {nav_method}")
             elif key == ord('s'):
                 cv2.imwrite(f'navigation_frame_{frame_count}.jpg', processed_frame)
                 print(f"Frame saved as navigation_frame_{frame_count}.jpg")
@@ -383,7 +491,62 @@ class ArucoBot:
         for entry in self.movement_log[-10:]:  # Last 10 commands
             timestamp = time.strftime('%H:%M:%S', time.localtime(entry['time']))
             print(f"{timestamp}: {entry['command']} -> {entry['response']}")
-
+    
+    def debug_coordinate_system(self, analysis):
+        """
+        Debug function to understand the coordinate system and angles
+        
+        Args:
+            analysis: Analysis data from analyze_marker_pair
+        """
+        if not analysis:
+            return
+            
+        direction_vector = analysis['direction_from_1_to_2']['direction_vector']
+        raw_azimuth = analysis['direction_from_1_to_2']['azimuth_angle']
+        bot_yaw = analysis['marker1_orientation']['yaw']
+        target_yaw = analysis['marker2_orientation']['yaw']
+        
+        print(f"\n=== Debug Coordinate System ===")
+        print(f"Bot Position: {analysis['marker1_position']}")
+        print(f"Target Position: {analysis['marker2_position']}")
+        print(f"Direction Vector: X={direction_vector[0]:.3f}, Y={direction_vector[1]:.3f}, Z={direction_vector[2]:.3f}")
+        print(f"Bot Yaw: {bot_yaw:.1f}°")
+        print(f"Target Yaw: {target_yaw:.1f}°")
+        print(f"Raw Azimuth (from X-axis): {raw_azimuth:.1f}°")
+        
+        # Calculate what each direction means
+        nav_angle = raw_azimuth - 90.0
+        if nav_angle > 180:
+            nav_angle -= 360
+        elif nav_angle < -180:
+            nav_angle += 360
+            
+        print(f"Navigation Angle (from forward): {nav_angle:.1f}°")
+        
+        # Calculate relative angle considering bot's orientation
+        target_angle = math.degrees(math.atan2(direction_vector[1], direction_vector[0]))
+        relative_angle = target_angle - bot_yaw
+        while relative_angle > 180:
+            relative_angle -= 360
+        while relative_angle < -180:
+            relative_angle += 360
+            
+        print(f"Target Angle (world): {target_angle:.1f}°")
+        print(f"Relative Angle (bot-centric): {relative_angle:.1f}°")
+        
+        # Interpret the direction
+        if abs(relative_angle) < 15:
+            direction = "FORWARD"
+        elif 15 <= relative_angle <= 165:
+            direction = "RIGHT"
+        elif -165 <= relative_angle <= -15:
+            direction = "LEFT"
+        else:
+            direction = "BACKWARD"
+            
+        print(f"Interpreted Direction: {direction}")
+        print("=" * 40)
 
 def main():
     """
