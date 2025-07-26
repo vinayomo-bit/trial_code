@@ -18,8 +18,8 @@
     },
     {
       "bot_id": "Bot3",
-      "bot_marker_id": 2,
-      "target_marker_id": 12,
+      "bot_marker_id": 7,
+      "target_marker_id": 8,
       "esp32_ip": "192.168.0.109",
       "esp32_port": 8888,
       "enabled": true

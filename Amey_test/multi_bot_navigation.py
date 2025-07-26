@@ -40,14 +40,14 @@ class MultiBotController:
         # Load configuration from JSON file
         self.config = self.load_config(config_file)
         
-        # Apply settings from config
-        nav_settings = self.config.get("navigation_settings", {})
-        self.debug_mode = nav_settings.get("debug_mode", False)
-        self.use_improved_nav = nav_settings.get("use_improved_nav", True)
-        self.show_triangle = nav_settings.get("show_triangle", True)
+        # Apply settings from config (no defaults)
+        nav_settings = self.config["navigation_settings"]  # Must exist
+        self.debug_mode = nav_settings["debug_mode"]
+        self.use_improved_nav = nav_settings["use_improved_nav"]
+        self.show_triangle = nav_settings["show_triangle"]
         
-        # Global settings
-        self.move_interval = nav_settings.get("move_interval", 0.5)
+        # Global settings (no defaults)
+        self.move_interval = nav_settings["move_interval"]
     
     def load_config(self, config_file):
         """
@@ -59,96 +59,58 @@ class MultiBotController:
         Returns:
             dict: Configuration data
         """
+        if not os.path.exists(config_file):
+            raise FileNotFoundError(f"Configuration file {config_file} not found! Please create the JSON configuration file.")
+        
         try:
-            if os.path.exists(config_file):
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                print(f"✓ Configuration loaded from {config_file}")
-                return config
-            else:
-                print(f"⚠ Configuration file {config_file} not found, using defaults")
-                return self.get_default_config()
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            print(f"✓ Configuration loaded from {config_file}")
+            
+            # Validate required sections
+            required_sections = ["bots", "camera_settings", "navigation_settings"]
+            for section in required_sections:
+                if section not in config:
+                    raise ValueError(f"Missing required section '{section}' in configuration file")
+            
+            return config
+            
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON format in {config_file}: {e}")
         except Exception as e:
-            print(f"✗ Error loading config: {e}")
-            print("Using default configuration")
-            return self.get_default_config()
-    
-    def get_default_config(self):
-        """
-        Get default configuration if JSON file is not available
-        """
-        return {
-            "bots": [
-                {
-                    "bot_id": "Bot1",
-                    "bot_marker_id": 0,
-                    "target_marker_id": 10,
-                    "esp32_ip": "192.168.1.100",
-                    "esp32_port": 8888,
-                    "enabled": True
-                },
-                {
-                    "bot_id": "Bot2",
-                    "bot_marker_id": 1,
-                    "target_marker_id": 11,
-                    "esp32_ip": "192.168.1.101",
-                    "esp32_port": 8888,
-                    "enabled": True
-                },
-                {
-                    "bot_id": "Bot3",
-                    "bot_marker_id": 2,
-                    "target_marker_id": 12,
-                    "esp32_ip": "192.168.1.102",
-                    "esp32_port": 8888,
-                    "enabled": True
-                }
-            ],
-            "camera_settings": {
-                "camera_index": 1,
-                "resolution": {"width": 1280, "height": 720}
-            },
-            "navigation_settings": {
-                "move_interval": 0.5,
-                "distance_threshold": 0.1,
-                "angle_threshold": 15,
-                "max_distance": 2.0,
-                "show_triangle": True,
-                "debug_mode": False,
-                "use_improved_nav": True
-            }
-        }
+            raise Exception(f"Error loading config: {e}")
     
     def load_bots_from_config(self):
         """
         Load all bots from configuration
         """
-        bots_config = self.config.get("bots", [])
-        nav_settings = self.config.get("navigation_settings", {})
+        bots_config = self.config["bots"]  # Must exist
+        nav_settings = self.config["navigation_settings"]  # Must exist
         
         print(f"\n=== Loading {len(bots_config)} bots from configuration ===")
         
         for bot_config in bots_config:
-            if bot_config.get("enabled", True):
-                # Create bot with config settings
+            # Check if bot is enabled (must be specified in config)
+            if bot_config["enabled"]:
+                # Create bot with config settings (all required)
                 bot = SingleBot(
                     bot_config["bot_id"],
                     bot_config["bot_marker_id"],
                     bot_config["target_marker_id"],
                     bot_config["esp32_ip"],
-                    bot_config.get("esp32_port", 8888)
+                    bot_config["esp32_port"]
                 )
                 
-                # Apply navigation settings from config
-                bot.distance_threshold = nav_settings.get("distance_threshold", 0.1)
-                bot.angle_threshold = nav_settings.get("angle_threshold", 15)
-                bot.max_distance = nav_settings.get("max_distance", 2.0)
-                bot.move_interval = nav_settings.get("move_interval", 0.5)
+                # Apply navigation settings from config (all required)
+                bot.distance_threshold = nav_settings["distance_threshold"]
+                bot.angle_threshold = nav_settings["angle_threshold"]
+                bot.max_distance = nav_settings["max_distance"]
+                bot.move_interval = nav_settings["move_interval"]
                 
                 self.bots[bot_config["bot_id"]] = bot
                 
                 print(f"✓ {bot_config['bot_id']}: Marker {bot_config['bot_marker_id']} → "
-                      f"Target {bot_config['target_marker_id']} @ {bot_config['esp32_ip']}:{bot_config.get('esp32_port', 8888)}")
+                      f"Target {bot_config['target_marker_id']} @ {bot_config['esp32_ip']}:{bot_config['esp32_port']}")
             else:
                 print(f"⚠ {bot_config['bot_id']}: Disabled in configuration")
         
@@ -492,10 +454,10 @@ class MultiBotController:
         """
         Main navigation loop for all bots
         """
-        # Get camera settings from config
-        camera_settings = self.config.get("camera_settings", {})
-        camera_index = camera_settings.get("camera_index", 1)
-        resolution = camera_settings.get("resolution", {"width": 1280, "height": 720})
+        # Get camera settings from config (all required)
+        camera_settings = self.config["camera_settings"]
+        camera_index = camera_settings["camera_index"]
+        resolution = camera_settings["resolution"]
         
         # Initialize camera with settings from config
         cap = cv2.VideoCapture(camera_index)
@@ -550,7 +512,7 @@ class MultiBotController:
             self.process_navigation_all_bots(detection_data)
             
             # Display frame with window size from config
-            resolution = self.config.get("camera_settings", {}).get("resolution", {"width": 1280, "height": 720})
+            resolution = self.config["camera_settings"]["resolution"]
             cv2.namedWindow('Multi-Bot ArUco Navigation', cv2.WINDOW_NORMAL)
             cv2.resizeWindow('Multi-Bot ArUco Navigation', resolution["width"], resolution["height"])
             cv2.imshow('Multi-Bot ArUco Navigation', processed_frame)
@@ -647,7 +609,7 @@ class SingleBot:
     """
     Individual bot controller - simplified version for multi-bot operation
     """
-    def __init__(self, bot_id, bot_marker_id, target_marker_id, esp32_ip, esp32_port=8888):
+    def __init__(self, bot_id, bot_marker_id, target_marker_id, esp32_ip, esp32_port):
         self.bot_id = bot_id
         self.bot_marker_id = bot_marker_id
         self.target_marker_id = target_marker_id
@@ -658,13 +620,11 @@ class SingleBot:
         self.socket = None
         self.connected = False
         
-        # Navigation parameters
-        self.distance_threshold = 0.1  # Stop when within 10cm
-        self.angle_threshold = 15      # Turn sensitivity  
-        self.max_distance = 2.0        # Maximum detection distance
-        
-        # Movement timing (same as original)
-        self.move_interval = 0.5       # Seconds between movement commands
+        # Navigation parameters (will be set from config)
+        self.distance_threshold = None
+        self.angle_threshold = None
+        self.max_distance = None
+        self.move_interval = None
         
         # Status tracking
         self.last_command_time = 0
@@ -788,38 +748,53 @@ def main():
     print("Multi-Bot ArUco Navigation System")
     print("=" * 40)
     
-    # Check for custom config file
-    config_file = input("Configuration file (default: bot_config.json): ").strip()
-    if not config_file:
-        config_file = "bot_config.json"
-    
-    # Create multi-bot controller with config
-    controller = MultiBotController(config_file)
-    
-    # Load bots from configuration
-    controller.load_bots_from_config()
-    
-    if not controller.bots:
-        print("No bots loaded from configuration!")
-        return
-    
-    # Connect to all bots
-    if not controller.connect_all_bots():
-        response = input("\nSome connections failed. Continue anyway? (y/n): ")
-        if response.lower() != 'y':
-            return
+    # Use bot_config.json by default
+    config_file = "bot_config.json"
+    print(f"Loading configuration from: {config_file}")
     
     try:
+        # Create multi-bot controller with config
+        controller = MultiBotController(config_file)
+        
+        # Load bots from configuration
+        controller.load_bots_from_config()
+        
+        if not controller.bots:
+            print("No enabled bots found in configuration!")
+            return
+        
+        # Connect to all bots
+        if not controller.connect_all_bots():
+            response = input("\nSome connections failed. Continue anyway? (y/n): ")
+            if response.lower() != 'y':
+                return
+        
         # Run navigation
         controller.run_navigation()
         
+    except FileNotFoundError as e:
+        print(f"Configuration Error: {e}")
+        print("Please create a bot_config.json file with proper configuration.")
+        return
+    
+    except (ValueError, KeyError) as e:
+        print(f"Configuration Error: {e}")
+        print("Please check your JSON configuration file for missing or invalid values.")
+        return
+    
     except KeyboardInterrupt:
         print("\nNavigation interrupted by user")
     
+    except Exception as e:
+        print(f"Error: {e}")
+    
     finally:
-        # Show movement logs
-        controller.print_movement_logs()
-        print("Multi-Bot Navigation ended")
+        try:
+            # Show movement logs
+            controller.print_movement_logs()
+            print("Multi-Bot Navigation ended")
+        except:
+            pass
 
 
 if __name__ == "__main__":
