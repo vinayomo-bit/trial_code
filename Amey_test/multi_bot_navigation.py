@@ -48,6 +48,10 @@ class MultiBotController:
         
         # Global settings (no defaults)
         self.move_interval = nav_settings["move_interval"]
+        
+        # Virtual marker system
+        self.virtual_markers = {}  # Dictionary to store virtual marker positions
+        self.mouse_callback_set = False
     
     def load_config(self, config_file):
         """
@@ -116,6 +120,79 @@ class MultiBotController:
         
         print(f"Loaded {len(self.bots)} active bots")
     
+    def mouse_callback(self, event, x, y, flags, param):
+        """
+        Mouse callback function for placing virtual markers
+        """
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # Place virtual marker at click position
+            self.virtual_markers["virtual"] = (x, y)
+            print(f"Virtual marker placed at: ({x}, {y})")
+    
+    def create_virtual_marker_analysis(self, bot_marker_id, virtual_pos, detection_data):
+        """
+        Create analysis data for virtual marker navigation
+        
+        Args:
+            bot_marker_id: ID of the bot marker
+            virtual_pos: (x, y) position of virtual marker in pixels
+            detection_data: Detection data from ArUco detector
+            
+        Returns:
+            dict: Analysis data similar to ArUco marker analysis
+        """
+        try:
+            # Find bot marker in detection data
+            ids_list = [id_val[0] for id_val in detection_data['ids']] if detection_data['ids'] is not None else []
+            
+            if bot_marker_id not in ids_list:
+                return None
+            
+            # Get bot marker data
+            bot_marker_index = ids_list.index(bot_marker_id)
+            bot_corners = detection_data['corners'][bot_marker_index][0]
+            bot_center = np.mean(bot_corners, axis=0)
+            
+            # Calculate distance (in pixels, convert to approximate meters)
+            distance_pixels = np.linalg.norm(np.array(virtual_pos) - bot_center)
+            distance_meters = distance_pixels * 0.001  # Rough conversion: 1000 pixels ≈ 1 meter
+            
+            # Calculate direction vector
+            direction_vector = np.array(virtual_pos) - bot_center
+            
+            # Calculate azimuth angle
+            azimuth_angle = math.degrees(math.atan2(direction_vector[1], direction_vector[0]))
+            
+            # Simple bot orientation calculation from marker corners
+            # Get the vector from first corner to second corner as orientation reference
+            corner_vector = bot_corners[1] - bot_corners[0]
+            bot_yaw = math.degrees(math.atan2(corner_vector[1], corner_vector[0]))
+            
+            # Create simple orientation structure
+            bot_orientation = {
+                'yaw': bot_yaw,
+                'pitch': 0.0,
+                'roll': 0.0
+            }
+            
+            # Create analysis structure similar to ArUco marker analysis
+            analysis = {
+                'distance': distance_meters,
+                'marker1_position': bot_center,
+                'marker2_position': np.array(virtual_pos),
+                'marker1_orientation': bot_orientation,
+                'direction_from_1_to_2': {
+                    'direction_vector': direction_vector,
+                    'azimuth_angle': azimuth_angle
+                }
+            }
+            
+            return analysis
+            
+        except Exception as e:
+            print(f"Error creating virtual marker analysis: {e}")
+            return None
+    
     def save_config(self, config_file="bot_config.json"):
         """
         Save current configuration to JSON file
@@ -180,10 +257,21 @@ class MultiBotController:
         
         for bot_id, bot in self.bots.items():
             if bot.connected and (current_time - bot.last_command_time) >= bot.move_interval:
-                # Analyze relationship between this bot and its target
-                analysis = self.detector.analyze_marker_pair(
-                    bot.bot_marker_id, bot.target_marker_id, detection_data
-                )
+                # Check if this bot uses virtual marker
+                if bot.target_marker_id == "virtual":
+                    # Handle virtual marker navigation
+                    if "virtual" in self.virtual_markers:
+                        virtual_pos = self.virtual_markers["virtual"]
+                        analysis = self.create_virtual_marker_analysis(
+                            bot.bot_marker_id, virtual_pos, detection_data
+                        )
+                    else:
+                        analysis = None  # No virtual marker placed yet
+                else:
+                    # Handle normal ArUco marker navigation
+                    analysis = self.detector.analyze_marker_pair(
+                        bot.bot_marker_id, bot.target_marker_id, detection_data
+                    )
                 
                 if analysis:
                     # Debug if enabled
@@ -235,7 +323,10 @@ class MultiBotController:
                         bot.send_command("stop")
                         bot.last_command_time = current_time
                         if self.debug_mode:
-                            print(f"{bot_id}: Markers not visible - stopping")
+                            if bot.target_marker_id == "virtual":
+                                print(f"{bot_id}: Virtual marker not placed or bot not visible - stopping")
+                            else:
+                                print(f"{bot_id}: Markers not visible - stopping")
     
     def add_navigation_overlay(self, frame, detection_data):
         """
@@ -281,32 +372,72 @@ class MultiBotController:
             
             # Marker detection status
             bot_detected = bot.bot_marker_id in ids_list
-            target_detected = bot.target_marker_id in ids_list
             
-            marker_status = f"  Bot M{bot.bot_marker_id}: {'✓' if bot_detected else '✗'} | Target M{bot.target_marker_id}: {'✓' if target_detected else '✗'}"
-            marker_color = (0, 255, 0) if (bot_detected and target_detected) else (255, 255, 0) if (bot_detected or target_detected) else (0, 0, 255)
+            if bot.target_marker_id == "virtual":
+                # Virtual marker status
+                virtual_available = "virtual" in self.virtual_markers
+                marker_status = f"  Bot M{bot.bot_marker_id}: {'✓' if bot_detected else '✗'} | Virtual Target: {'✓' if virtual_available else '✗ (Click to place)'}"
+                marker_color = (0, 255, 0) if (bot_detected and virtual_available) else (255, 255, 0) if (bot_detected or virtual_available) else (0, 0, 255)
+            else:
+                # Normal ArUco marker status
+                target_detected = bot.target_marker_id in ids_list
+                marker_status = f"  Bot M{bot.bot_marker_id}: {'✓' if bot_detected else '✗'} | Target M{bot.target_marker_id}: {'✓' if target_detected else '✗'}"
+                marker_color = (0, 255, 0) if (bot_detected and target_detected) else (255, 255, 0) if (bot_detected or target_detected) else (0, 0, 255)
+            
             cv2.putText(frame, marker_status, 
                        (20, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.4, marker_color, 1)
             y_pos += line_height
             
             # Distance if both markers detected
-            if bot_detected and target_detected:
-                analysis = self.detector.analyze_marker_pair(
-                    bot.bot_marker_id, bot.target_marker_id, detection_data
-                )
-                if analysis:
-                    distance_color = (0, 255, 0) if analysis['distance'] < 0.2 else (255, 255, 0)
-                    cv2.putText(frame, f"  Distance: {analysis['distance']:.3f}m", 
-                               (20, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.4, distance_color, 1)
-                    
-                    # Draw navigation line
-                    frame = self.detector.draw_marker_relationship(frame, analysis)
+            if bot.target_marker_id == "virtual":
+                # Virtual marker distance
+                if bot_detected and "virtual" in self.virtual_markers:
+                    try:
+                        virtual_pos = self.virtual_markers["virtual"]
+                        analysis = self.create_virtual_marker_analysis(
+                            bot.bot_marker_id, virtual_pos, detection_data
+                        )
+                        if analysis:
+                            distance_color = (0, 255, 0) if analysis['distance'] < 0.2 else (255, 255, 0)
+                            cv2.putText(frame, f"  Distance: {analysis['distance']:.3f}m", 
+                                       (20, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.4, distance_color, 1)
+                            
+                            # Draw line to virtual marker
+                            bot_center = analysis['marker1_position'].astype(int)
+                            virtual_center = analysis['marker2_position'].astype(int)
+                            cv2.line(frame, tuple(bot_center), tuple(virtual_center), (255, 0, 255), 2)
+                            cv2.arrowedLine(frame, tuple(bot_center), tuple(virtual_center), (255, 0, 255), 2)
+                    except Exception as e:
+                        if self.debug_mode:
+                            print(f"Error drawing virtual marker for {bot_id}: {e}")
+            else:
+                # Normal ArUco marker distance
+                bot_detected = bot.bot_marker_id in ids_list
+                target_detected = bot.target_marker_id in ids_list
+                if bot_detected and target_detected:
+                    try:
+                        analysis = self.detector.analyze_marker_pair(
+                            bot.bot_marker_id, bot.target_marker_id, detection_data
+                        )
+                        if analysis:
+                            distance_color = (0, 255, 0) if analysis['distance'] < 0.2 else (255, 255, 0)
+                            cv2.putText(frame, f"  Distance: {analysis['distance']:.3f}m", 
+                                       (20, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.4, distance_color, 1)
+                            
+                            # Draw navigation line
+                            frame = self.detector.draw_marker_relationship(frame, analysis)
+                    except Exception as e:
+                        if self.debug_mode:
+                            print(f"Error drawing marker relationship for {bot_id}: {e}")
             
             y_pos += 5  # Extra spacing between bots
         
         # Draw triangle if enabled and we have bot positions
         if self.show_triangle:
             frame = self.draw_bot_triangle(frame, detection_data)
+        
+        # Draw virtual markers
+        frame = self.draw_virtual_markers(frame)
         
         return frame
     
@@ -429,6 +560,35 @@ class MultiBotController:
         
         return side1 + side2 + side3
     
+    def draw_virtual_markers(self, frame):
+        """
+        Draw virtual markers on the frame
+        """
+        try:
+            for marker_id, position in self.virtual_markers.items():
+                x, y = int(position[0]), int(position[1])
+                
+                # Draw virtual marker as a cross with circle
+                marker_color = (255, 0, 255)  # Magenta color for virtual markers
+                size = 15
+                thickness = 3
+                
+                # Draw cross
+                cv2.line(frame, (x - size, y), (x + size, y), marker_color, thickness)
+                cv2.line(frame, (x, y - size), (x, y + size), marker_color, thickness)
+                
+                # Draw circle around it
+                cv2.circle(frame, (x, y), size + 5, marker_color, 2)
+                
+                # Add label
+                cv2.putText(frame, f"Virtual-{marker_id}", 
+                           (x + 20, y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, marker_color, 2)
+        except Exception as e:
+            if self.debug_mode:
+                print(f"Error drawing virtual markers: {e}")
+        
+        return frame
+    
     def emergency_stop_all(self):
         """
         Emergency stop for all bots
@@ -483,7 +643,7 @@ class MultiBotController:
         print("\nControls:")
         print("- Press 'SPACE' to start/stop navigation for all bots")
         print("- Press 'e' for emergency stop (all bots)")
-        print("- Press '1', '2', '3' to stop individual bots")
+        print("- Press '1', '2', '3', '4' to stop individual bots")
         print("- Press 'c' to disable continuous mode (enable timed movements)")
         print("- Press 'd' to toggle debug mode")
         print("- Press 'n' to toggle navigation method")
@@ -492,6 +652,8 @@ class MultiBotController:
         print("- Press 't' to test all bots")
         print("- Press 'v' to toggle triangle visualization")
         print("- Press 'x' to save current configuration")
+        print("- Press 'm' to clear virtual markers")
+        print("- Click on screen to place virtual marker for Bot with ID 6")
         print("- Press 'q' to quit")
         
         frame_count = 0
@@ -515,6 +677,12 @@ class MultiBotController:
             resolution = self.config["camera_settings"]["resolution"]
             cv2.namedWindow('Multi-Bot ArUco Navigation', cv2.WINDOW_NORMAL)
             cv2.resizeWindow('Multi-Bot ArUco Navigation', resolution["width"], resolution["height"])
+            
+            # Set mouse callback for virtual marker placement
+            if not self.mouse_callback_set:
+                cv2.setMouseCallback('Multi-Bot ArUco Navigation', self.mouse_callback)
+                self.mouse_callback_set = True
+            
             cv2.imshow('Multi-Bot ArUco Navigation', processed_frame)
             
             # Handle key presses
@@ -540,6 +708,8 @@ class MultiBotController:
                 self.stop_individual_bot("Bot2")
             elif key == ord('3'):
                 self.stop_individual_bot("Bot3")
+            elif key == ord('4'):
+                self.stop_individual_bot("Bot4")
             elif key == ord('c'):
                 # Toggle continuous mode for all bots
                 print("Toggling continuous mode for all bots...")
@@ -578,6 +748,10 @@ class MultiBotController:
                 self.config["navigation_settings"]["debug_mode"] = self.debug_mode
                 self.config["navigation_settings"]["use_improved_nav"] = self.use_improved_nav
                 self.save_config()
+            elif key == ord('m'):
+                # Clear virtual markers
+                self.virtual_markers.clear()
+                print("Virtual markers cleared")
         
         # Cleanup
         if self.navigation_active:

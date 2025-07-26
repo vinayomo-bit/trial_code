@@ -4,7 +4,7 @@
       "bot_id": "Bot1",
       "bot_marker_id": 1,
       "target_marker_id": 2,
-      "esp32_ip": "192.168.0.133",
+      "esp32_ip": "192.168.0.13",
       "esp32_port": 8888,
       "enabled": true
     },
@@ -21,6 +21,14 @@
       "bot_marker_id": 7,
       "target_marker_id": 8,
       "esp32_ip": "192.168.0.109",
+      "esp32_port": 8888,
+      "enabled": true
+    },
+    {
+      "bot_id": "Bot4",
+      "bot_marker_id": 6,
+      "target_marker_id": "virtual",
+      "esp32_ip": "192.168.0.133",
       "esp32_port": 8888,
       "enabled": true
     }
