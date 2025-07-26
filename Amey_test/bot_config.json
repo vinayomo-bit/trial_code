@@ -1,0 +1,44 @@
+{
+  "bots": [
+    {
+      "bot_id": "Bot1",
+      "bot_marker_id": 0,
+      "target_marker_id": 10,
+      "esp32_ip": "192.168.1.100",
+      "esp32_port": 8888,
+      "enabled": true
+    },
+    {
+      "bot_id": "Bot2",
+      "bot_marker_id": 1,
+      "target_marker_id": 11,
+      "esp32_ip": "192.168.1.101",
+      "esp32_port": 8888,
+      "enabled": true
+    },
+    {
+      "bot_id": "Bot3",
+      "bot_marker_id": 2,
+      "target_marker_id": 12,
+      "esp32_ip": "192.168.1.102",
+      "esp32_port": 8888,
+      "enabled": true
+    }
+  ],
+  "camera_settings": {
+    "camera_index": 1,
+    "resolution": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "navigation_settings": {
+    "move_interval": 0.5,
+    "distance_threshold": 0.1,
+    "angle_threshold": 15,
+    "max_distance": 2.0,
+    "show_triangle": true,
+    "debug_mode": false,
+    "use_improved_nav": true
+  }
+}
