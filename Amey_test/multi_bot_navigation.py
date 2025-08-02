@@ -52,6 +52,10 @@ class MultiBotController:
         # Virtual marker system
         self.virtual_markers = {}  # Dictionary to store virtual marker positions
         self.mouse_callback_set = False
+        
+        # Animation system for signal effects
+        self.animation_time = 0
+        self.signal_animations = {}  # Store signal animation states for each bot
     
     def load_config(self, config_file):
         """
@@ -439,6 +443,9 @@ class MultiBotController:
         # Draw virtual markers
         frame = self.draw_virtual_markers(frame)
         
+        # Draw signal animations for all bots
+        frame = self.draw_signal_animations(frame, detection_data)
+        
         return frame
     
     def debug_coordinate_system(self, analysis, bot_id):
@@ -586,6 +593,155 @@ class MultiBotController:
         except Exception as e:
             if self.debug_mode:
                 print(f"Error drawing virtual markers: {e}")
+        
+        return frame
+    
+    def draw_signal_animations(self, frame, detection_data):
+        """
+        Draw animated signal antenna effects for all bots
+        """
+        try:
+            current_time = time.time()
+            self.animation_time = current_time
+            
+            # Get all detected marker IDs
+            ids_list = [id_val[0] for id_val in detection_data['ids']] if detection_data['ids'] is not None else []
+            
+            # Draw signal animations for each bot
+            for bot_id, bot in self.bots.items():
+                if bot.bot_marker_id in ids_list:
+                    # Find the bot marker in detection data
+                    for i, marker_id in enumerate(ids_list):
+                        if marker_id == bot.bot_marker_id:
+                            # Get marker corners and calculate center
+                            corners = detection_data['corners'][i][0]
+                            center_x = int(np.mean(corners[:, 0]))
+                            center_y = int(np.mean(corners[:, 1]))
+                            
+                            # Draw signal animation
+                            frame = self.draw_bot_signal_animation(frame, bot_id, bot, (center_x, center_y), current_time)
+                            break
+            
+        except Exception as e:
+            if self.debug_mode:
+                print(f"Error drawing signal animations: {e}")
+        
+        return frame
+    
+    def draw_bot_signal_animation(self, frame, bot_id, bot, center_pos, current_time):
+        """
+        Draw signal antenna animation for a single bot
+        
+        Args:
+            frame: The frame to draw on
+            bot_id: Bot identifier
+            bot: Bot object
+            center_pos: (x, y) center position of the bot
+            current_time: Current timestamp
+        """
+        try:
+            x, y = center_pos
+            
+            # Initialize signal animation state for this bot if not exists
+            if bot_id not in self.signal_animations:
+                self.signal_animations[bot_id] = {
+                    'last_signal_time': current_time,
+                    'signal_phase': 0
+                }
+            
+            signal_state = self.signal_animations[bot_id]
+            
+            # Signal timing - emit signal every 2 seconds
+            signal_interval = 2.0
+            time_since_last = current_time - signal_state['last_signal_time']
+            
+            # Check if it's time for a new signal burst
+            if time_since_last >= signal_interval:
+                signal_state['last_signal_time'] = current_time
+                signal_state['signal_phase'] = 0
+            
+            # Calculate animation progress (0 to 1 over 1.5 seconds)
+            animation_duration = 1.5
+            progress = min(time_since_last / animation_duration, 1.0)
+            
+            # Only draw if we're in animation phase
+            if progress < 1.0:
+                # Connection status color
+                if bot.connected:
+                    base_color = (0, 255, 0)  # Green for connected
+                else:
+                    base_color = (0, 0, 255)  # Red for disconnected
+                
+                # Draw multiple signal rings
+                max_rings = 3
+                for ring in range(max_rings):
+                    ring_delay = ring * 0.3  # Stagger rings by 0.3 seconds
+                    ring_progress = max(0, min((progress * animation_duration - ring_delay) / 1.2, 1.0))
+                    
+                    if ring_progress > 0:
+                        # Calculate ring properties
+                        max_radius = 60
+                        current_radius = int(ring_progress * max_radius)
+                        
+                        # Fade out as ring expands
+                        alpha = int(255 * (1.0 - ring_progress))
+                        signal_color = (
+                            min(255, base_color[0] + alpha // 4),
+                            min(255, base_color[1]),
+                            min(255, base_color[2] + alpha // 4)
+                        )
+                        
+                        # Draw ring
+                        if current_radius > 0:
+                            thickness = max(1, int(3 * (1.0 - ring_progress)))
+                            cv2.circle(frame, (x, y), current_radius, signal_color, thickness)
+                
+                # Draw antenna lines (radiating outward)
+                num_lines = 8
+                for i in range(num_lines):
+                    angle = (i * 360 / num_lines) + (progress * 360 * 0.5)  # Rotate slowly
+                    angle_rad = math.radians(angle)
+                    
+                    # Line length based on progress
+                    line_length = int(20 + progress * 40)
+                    end_x = x + int(line_length * math.cos(angle_rad))
+                    end_y = y + int(line_length * math.sin(angle_rad))
+                    
+                    # Line color with fade
+                    line_alpha = int(255 * (1.0 - progress) * 0.7)
+                    line_color = (
+                        min(255, base_color[0] + line_alpha // 3),
+                        min(255, base_color[1]),
+                        min(255, base_color[2] + line_alpha // 3)
+                    )
+                    
+                    # Draw antenna line
+                    cv2.line(frame, (x, y), (end_x, end_y), line_color, 2)
+                
+                # Draw central antenna symbol
+                antenna_color = base_color
+                cv2.circle(frame, (x, y), 5, antenna_color, -1)  # Central dot
+                cv2.circle(frame, (x, y), 8, antenna_color, 2)   # Outer ring
+                
+                # Draw signal strength indicator based on connection
+                if bot.connected:
+                    # Connected - draw full signal bars
+                    for bar in range(3):
+                        bar_height = 8 + bar * 4
+                        bar_x = x + 15 + bar * 4
+                        cv2.rectangle(frame, (bar_x, y - bar_height), (bar_x + 2, y), (0, 255, 0), -1)
+                else:
+                    # Disconnected - draw weak signal or X
+                    cv2.line(frame, (x + 15, y - 8), (x + 25, y + 2), (0, 0, 255), 2)
+                    cv2.line(frame, (x + 25, y - 8), (x + 15, y + 2), (0, 0, 255), 2)
+            
+            # Draw bot status indicator
+            status_color = (0, 255, 0) if bot.connected else (0, 0, 255)
+            cv2.putText(frame, f"{bot_id}", (x + 30, y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, status_color, 2)
+            
+        except Exception as e:
+            if self.debug_mode:
+                print(f"Error drawing signal animation for {bot_id}: {e}")
         
         return frame
     

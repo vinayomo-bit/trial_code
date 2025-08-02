@@ -40,14 +40,14 @@ class ArucoBot:
         self.target_marker_id = target_marker_id
         
         # TCP Connection settings
-        self.esp32_ip = "192.168.1.100"  # Default IP - will be configured
+        self.esp32_ip = "192.168.0.146"  # Default IP - will be configured
         self.esp32_port = 8888
         self.socket = None
         self.connected = False
         
         # Navigation parameters
         self.distance_threshold = 0.1  # Stop when within 10cm of target
-        self.angle_threshold = 15      # Degrees - turn if angle > threshold
+        self.angle_threshold = 10      # Degrees - turn if angle > threshold
         self.max_distance = 2.0        # Maximum detection distance (meters)
         
         # Movement timing
